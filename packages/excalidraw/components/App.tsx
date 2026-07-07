@@ -429,6 +429,7 @@ import {
   setCursorForShape,
 } from "../cursor";
 import { ElementCanvasButtons } from "../components/ElementCanvasButtons";
+import { HandHighlighter } from "../highlighter";
 import { LaserTrails } from "../laserTrails";
 import { withBatchedUpdates, withBatchedUpdatesThrottled } from "../reactUtils";
 import { isPointHittingTextAutoResizeHandle } from "../textAutoResizeHandle";
@@ -747,6 +748,7 @@ class App extends React.Component<AppProps, AppState> {
   laserTrails = new LaserTrails(this);
   eraserTrail = new EraserTrail(this);
   lassoTrail = new LassoTrail(this);
+  handHighlighter = new HandHighlighter();
 
   onChangeEmitter = new Emitter<
     [
@@ -2267,6 +2269,7 @@ class App extends React.Component<AppProps, AppState> {
                               this.laserTrails,
                               this.lassoTrail,
                               this.eraserTrail,
+                              this.handHighlighter,
                             ]}
                           />
                           {selectedElements.length === 1 &&
@@ -3303,6 +3306,7 @@ class App extends React.Component<AppProps, AppState> {
     this.library.destroy();
     this.laserTrails.stop();
     this.eraserTrail.stop();
+    this.handHighlighter.stop();
     this.onChangeEmitter.clear();
     this.store.onStoreIncrementEmitter.clear();
     this.store.onDurableIncrementEmitter.clear();
@@ -3567,6 +3571,10 @@ class App extends React.Component<AppProps, AppState> {
 
     if (isEraserActive(prevState) && !isEraserActive(this.state)) {
       this.eraserTrail.endPath();
+    }
+
+    if (isHandToolActive(prevState) && !isHandToolActive(this.state)) {
+      this.handHighlighter.deactivate();
     }
 
     if (prevProps.viewModeEnabled !== this.props.viewModeEnabled) {
@@ -5771,6 +5779,9 @@ class App extends React.Component<AppProps, AppState> {
     }
 
     const nextActiveTool = updateActiveTool(this.state, tool);
+    if (nextActiveTool.type !== "hand") {
+      this.handHighlighter.deactivate();
+    }
     if (nextActiveTool.type === "hand") {
       setCursor(this.interactiveCanvas, CURSOR_TYPE.GRAB);
     } else if (!isHoldingSpace) {
@@ -6663,6 +6674,12 @@ class App extends React.Component<AppProps, AppState> {
     if (this.state.multiElement) {
       return;
     }
+
+    if (isHandToolActive(this.state)) {
+      this.handHighlighter.toggle(event.clientX, event.clientY);
+      return;
+    }
+
     // we should only be able to double click when mode is selection
     if (this.state.activeTool.type !== this.state.preferredSelectionTool.type) {
       return;
@@ -7207,6 +7224,10 @@ class App extends React.Component<AppProps, AppState> {
         gesture.initialDistance =
         gesture.initialScale =
           null;
+    }
+
+    if (this.handHighlighter.isActive) {
+      this.handHighlighter.updatePosition(event.clientX, event.clientY);
     }
 
     if (
