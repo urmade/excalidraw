@@ -64,6 +64,28 @@ describe("hand tool highlighter", () => {
     expect(isHighlighterVisible()).toBe(false);
   });
 
+  it("keeps the user toggle active when the trail lifecycle is torn down", () => {
+    mouse.doubleClickAt(150, 150);
+    expect(h.app.handHighlighter.isActive).toBe(true);
+
+    // `stop()` is the SVGLayer effect-cleanup / teardown hook. It must only
+    // detach from the DOM container and must not reset the user's on/off
+    // toggle, otherwise a remount or cleanup could turn the highlighter off
+    // while Hand mode is still active.
+    act(() => {
+      h.app.handHighlighter.stop();
+    });
+    expect(h.app.handHighlighter.isActive).toBe(true);
+
+    // re-binding to a container (as SVGLayer does on (re)mount) keeps it active
+    act(() => {
+      h.app.handHighlighter.start(
+        document.querySelector(".SVGLayer svg") as SVGSVGElement,
+      );
+    });
+    expect(h.app.handHighlighter.isActive).toBe(true);
+  });
+
   it("does not activate when double-clicking outside hand mode", async () => {
     act(() => {
       h.app.setActiveTool({ type: "selection" });

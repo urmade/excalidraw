@@ -40,8 +40,11 @@ export class HandHighlighter implements Trail {
   }
 
   stop() {
-    this.deactivate();
-
+    // Only tear down the DOM/container binding here. Do NOT reset `active`:
+    // that flag represents the user's on/off toggle and is managed separately
+    // (via `toggle`/`deactivate` when leaving hand mode). Coupling teardown to
+    // the toggle would let a remount/cleanup silently turn the highlighter off
+    // while Hand mode is still active.
     if (this.circleElement.parentNode === this.container) {
       this.container?.removeChild(this.circleElement);
     }
