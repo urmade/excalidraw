@@ -419,6 +419,7 @@ export interface AppState {
   scrollY: number;
   scrollConstraints: ScrollConstraints | null;
   cursorButton: "up" | "down";
+  handToolSpotlight: boolean;
   scrolledOutside: boolean;
   name: string | null;
   isResizing: boolean;

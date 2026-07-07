@@ -455,6 +455,7 @@ import FollowMode from "./FollowMode/FollowMode";
 import LayerUI from "./LayerUI";
 import { ElementCanvasButton } from "./MagicButton";
 import { SVGLayer } from "./SVGLayer";
+import { HandToolSpotlight } from "./HandToolSpotlight";
 import { searchItemInFocusAtom } from "./SearchMenu";
 import { isSidebarDockedAtom } from "./Sidebar/Sidebar";
 import { StaticCanvas, InteractiveCanvas } from "./canvases";
@@ -2268,6 +2269,10 @@ class App extends React.Component<AppProps, AppState> {
                               this.lassoTrail,
                               this.eraserTrail,
                             ]}
+                          />
+                          <HandToolSpotlight
+                            active={this.state.handToolSpotlight}
+                            initialPosition={this.lastViewportPosition}
                           />
                           {selectedElements.length === 1 &&
                             this.state.openDialog?.name !==
@@ -5794,6 +5799,7 @@ class App extends React.Component<AppProps, AppState> {
         snapLines: prevState.snapLines.length ? [] : prevState.snapLines,
         originSnapOffset: null,
         activeEmbeddable: null,
+        handToolSpotlight: false,
         selectedLinearElement: isSelectionLikeTool(nextActiveTool.type)
           ? prevState.selectedLinearElement
           : null,
@@ -6661,6 +6667,10 @@ class App extends React.Component<AppProps, AppState> {
     // case: double-clicking with arrow/line tool selected would both create
     // text and enter multiElement mode
     if (this.state.multiElement) {
+      return;
+    }
+    if (isHandToolActive(this.state)) {
+      this.setState((s) => ({ handToolSpotlight: !s.handToolSpotlight }));
       return;
     }
     // we should only be able to double click when mode is selection

@@ -1,0 +1,32 @@
+@use "../css/variables.module" as *;
+
+.excalidraw {
+  .HandToolSpotlight {
+    pointer-events: none;
+    width: 100vw;
+    height: 100vh;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: var(--zIndex-svgLayer);
+    overflow: hidden;
+
+    &__circle {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: radial-gradient(
+        circle,
+        rgba(105, 101, 219, 0.35) 0%,
+        rgba(105, 101, 219, 0.15) 50%,
+        rgba(105, 101, 219, 0.05) 70%,
+        transparent 100%
+      );
+      box-shadow: 0 0 0 2px rgba(105, 101, 219, 0.25);
+      pointer-events: none;
+    }
+  }
+}
