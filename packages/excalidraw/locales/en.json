@@ -737,5 +737,13 @@
     "spacebar": "Space",
     "delete": "Delete",
     "mmb": "Scroll wheel"
+  },
+  "boards": {
+    "title": "Boards",
+    "create": "New board",
+    "loading": "Loading boards...",
+    "empty": "No boards yet",
+    "untitled": "Untitled",
+    "elementCount": "{{count}} elements"
   }
 }

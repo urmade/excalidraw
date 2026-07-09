@@ -25,6 +25,7 @@ import {
   isArrowElement,
   isIframeLikeElement,
   isInitializedImageElement,
+  isStrokeColorizableSvgDataURL,
   isTextElement,
 } from "@excalidraw/element";
 
@@ -533,7 +534,8 @@ const renderElementToSvg = (
 
         if (
           renderConfig.theme === THEME.DARK &&
-          fileData.mimeType === MIME_TYPES.svg
+          fileData.mimeType === MIME_TYPES.svg &&
+          !isStrokeColorizableSvgDataURL(fileData.dataURL)
         ) {
           g.setAttribute("filter", DARK_THEME_FILTER);
         }

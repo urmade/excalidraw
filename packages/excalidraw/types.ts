@@ -876,6 +876,7 @@ export type AppClassProperties = {
     {
       image: HTMLImageElement | Promise<HTMLImageElement>;
       mimeType: ValueOf<typeof IMAGE_MIME_TYPES>;
+      isStrokeColorizableSvg?: boolean;
     }
   >;
   files: BinaryFiles;

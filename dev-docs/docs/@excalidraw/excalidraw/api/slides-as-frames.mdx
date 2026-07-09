@@ -1,0 +1,87 @@
+# Slides as Frames for Agents
+
+This guide documents a scene-generic contract for agents that want to create slide decks in Excalidraw.
+
+The core idea is simple:
+
+- A slide is just a `frame` element.
+- Slide order is explicit through frame `customData.presentationSlideOrder`.
+- Slide content uses normal scene elements with `frameId`.
+
+## Why this contract
+
+- It stays compatible with existing Excalidraw scenes.
+- It does not depend on presentation mode UI.
+- It works with the existing `convertToExcalidrawElements` skeleton API.
+
+## High-level operations
+
+Agents should implement these high-level steps on top of Excalidraw primitives:
+
+- `createSlide(frame)` - create a frame with a stable `presentationSlideOrder`.
+- `addShape` - insert shape skeletons (`rectangle`, `ellipse`, `diamond`, etc.).
+- `addText` - insert text skeletons.
+- `addArrow` - insert linear skeletons with optional bindings.
+- `addImage` - insert image elements with files attached.
+- `layoutInFrame` - place elements in frame coordinates and assign `frameId`.
+- `exportFrame` - export one frame using `exportingFrame`.
+
+## Ordering invariants
+
+For frame rendering and clipping to behave correctly:
+
+- Frame children should precede the frame in element order.
+- If you duplicate or generate scenes, preserve that ordering.
+- Keep `presentationSlideOrder` sequential (`0..n-1`) for deterministic exports.
+
+## Minimal example
+
+```ts
+import {
+  convertToExcalidrawElements,
+  serializeAsJSON,
+} from "@excalidraw/excalidraw";
+
+const elements = convertToExcalidrawElements([
+  {
+    type: "rectangle",
+    id: "title-box-1",
+    x: 80,
+    y: 120,
+    width: 600,
+    height: 120,
+    frameId: "slide-1",
+  },
+  {
+    type: "text",
+    x: 110,
+    y: 155,
+    text: "Slide 1",
+    frameId: "slide-1",
+  },
+  {
+    type: "frame",
+    id: "slide-1",
+    name: "Intro",
+    x: 40,
+    y: 80,
+    width: 1280,
+    height: 720,
+    children: ["title-box-1"],
+    customData: {
+      presentationSlideOrder: 0,
+    },
+  },
+]);
+
+const json = serializeAsJSON(elements, {}, {}, "local");
+```
+
+## Exporting a single slide
+
+Use `exportToSvg()` or `exportToBlob()` with:
+
+- `elements`: scene elements overlapping the target frame
+- `exportingFrame`: the frame element
+
+This gives deterministic, per-slide output for both HTML decks and PDF workflows.

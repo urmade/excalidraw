@@ -469,7 +469,8 @@ const drawElementOnCanvas = (
 
         const shouldInvertImage =
           renderConfig.theme === THEME.DARK &&
-          cacheEntry?.mimeType === MIME_TYPES.svg;
+          cacheEntry?.mimeType === MIME_TYPES.svg &&
+          !cacheEntry?.isStrokeColorizableSvg;
 
         if (shouldInvertImage && isSafari) {
           const devicePixelRatio = window.devicePixelRatio || 1;

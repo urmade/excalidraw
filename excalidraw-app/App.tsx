@@ -33,7 +33,7 @@ import {
   isDevEnv,
 } from "@excalidraw/common";
 import polyfill from "@excalidraw/excalidraw/polyfill";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadFromBlob } from "@excalidraw/excalidraw/data/blob";
 import { t } from "@excalidraw/excalidraw/i18n";
 
@@ -116,10 +116,8 @@ import {
 
 import { updateStaleImageStatuses } from "./data/FileManager";
 import { FileStatusStore } from "./data/fileStatusStore";
-import {
-  importFromLocalStorage,
-  importUsernameFromLocalStorage,
-} from "./data/localStorage";
+import { importUsernameFromLocalStorage } from "./data/localStorage";
+import { LocalBoards } from "./data/LocalBoards";
 
 import { loadFilesFromFirebase } from "./data/firebase";
 import {
@@ -139,6 +137,7 @@ import DebugCanvas, {
   isVisualDebuggerEnabled,
   loadSavedDebugState,
 } from "./components/DebugCanvas";
+import { IconLibraryToolbar } from "./components/IconLibraryToolbar";
 import { AIComponents } from "./components/AI";
 import { ExcalidrawPlusIframeExport } from "./ExcalidrawPlusIframeExport";
 
@@ -146,6 +145,16 @@ import "./index.scss";
 
 import { ExcalidrawPlusPromoBanner } from "./components/ExcalidrawPlusPromoBanner";
 import { AppSidebar } from "./components/AppSidebar";
+import { useBoards, syncActiveBoardFromStorage } from "./hooks/useBoards";
+import {
+  createBlankSlide,
+  createSlideFromSelection,
+  duplicateSlide,
+  getSlideDeck,
+  moveSlide,
+  renameActiveSlide,
+} from "./slides";
+import { exportSlidesToHtml, exportSlidesToPdf } from "./slides-export";
 
 import type { CollabAPI } from "./collab/Collab";
 
@@ -227,8 +236,7 @@ const initializeScene = async (opts: {
     /^#json=([a-zA-Z0-9_-]+),([a-zA-Z0-9_-]+)$/,
   );
   const externalUrlMatch = window.location.hash.match(/^#url=(.*)$/);
-
-  const localDataState = importFromLocalStorage();
+  const localDataState = await LocalBoards.importActiveBoard();
 
   let scene: Omit<
     RestoredDataState,
@@ -410,6 +418,188 @@ const ExcalidrawWrapper = () => {
   });
   const collabError = useAtomValue(collabErrorIndicatorAtom);
 
+  const { switchBoard, createBoard, renameBoard, refreshBoards } = useBoards(
+    excalidrawAPI,
+    collabAPI,
+  );
+  const [isPresentingSlides, setIsPresentingSlides] = useState(false);
+  const [activeSlideId, setActiveSlideId] = useState<string | null>(null);
+  const [slideIds, setSlideIds] = useState<string[]>([]);
+  const presentationRestoreRef = useRef<{
+    viewModeEnabled: boolean;
+    frameRendering: ReturnType<
+      ExcalidrawImperativeAPI["getAppState"]
+    >["frameRendering"];
+    scrollConstraints: ReturnType<
+      ExcalidrawImperativeAPI["getAppState"]
+    >["scrollConstraints"];
+  } | null>(null);
+
+  const syncSlidesFromScene = useCallback(() => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    const { frameIds } = getSlideDeck(excalidrawAPI.getSceneElements());
+    setSlideIds((previous) => {
+      if (
+        previous.length === frameIds.length &&
+        previous.every((id, index) => id === frameIds[index])
+      ) {
+        return previous;
+      }
+      return frameIds;
+    });
+    setActiveSlideId((previous) => {
+      if (previous && frameIds.includes(previous)) {
+        return previous;
+      }
+      const nextActiveSlideId = frameIds[0] || null;
+      return previous === nextActiveSlideId ? previous : nextActiveSlideId;
+    });
+  }, [excalidrawAPI]);
+
+  useEffect(() => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    syncSlidesFromScene();
+    return excalidrawAPI.onChange(() => {
+      syncSlidesFromScene();
+    });
+  }, [excalidrawAPI, syncSlidesFromScene]);
+
+  const focusSlide = useCallback(
+    (slideId: string, animation = true) => {
+      if (!excalidrawAPI) {
+        return;
+      }
+      excalidrawAPI.setViewport({
+        target: slideId,
+        fit: "contain",
+        animation,
+        lock: {
+          scroll: true,
+          zoom: true,
+          overscroll: false,
+        },
+        offsets: {
+          ui: true,
+        },
+      });
+      setActiveSlideId(slideId);
+    },
+    [excalidrawAPI],
+  );
+
+  const stopPresentation = useCallback(() => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    const restore = presentationRestoreRef.current;
+    if (restore) {
+      excalidrawAPI.updateScene({
+        appState: {
+          viewModeEnabled: restore.viewModeEnabled,
+          scrollConstraints: restore.scrollConstraints,
+        },
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+      excalidrawAPI.updateFrameRendering(restore.frameRendering);
+    } else {
+      excalidrawAPI.updateScene({
+        appState: {
+          viewModeEnabled: false,
+          scrollConstraints: null,
+        },
+        captureUpdate: CaptureUpdateAction.NEVER,
+      });
+      excalidrawAPI.updateFrameRendering({
+        enabled: true,
+        clip: true,
+        name: true,
+        outline: true,
+      });
+    }
+    presentationRestoreRef.current = null;
+    setIsPresentingSlides(false);
+  }, [excalidrawAPI]);
+
+  const startPresentation = useCallback(() => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    const appState = excalidrawAPI.getAppState();
+    if (!slideIds.length) {
+      excalidrawAPI.setToast({
+        message: "Create at least one slide frame before presenting.",
+      });
+      return;
+    }
+
+    presentationRestoreRef.current = {
+      viewModeEnabled: appState.viewModeEnabled,
+      frameRendering: appState.frameRendering,
+      scrollConstraints: appState.scrollConstraints,
+    };
+
+    excalidrawAPI.updateScene({
+      appState: {
+        viewModeEnabled: true,
+      },
+      captureUpdate: CaptureUpdateAction.NEVER,
+    });
+    excalidrawAPI.updateFrameRendering({
+      enabled: true,
+      name: false,
+      outline: false,
+      clip: true,
+    });
+    setIsPresentingSlides(true);
+    focusSlide(activeSlideId || slideIds[0], true);
+  }, [activeSlideId, excalidrawAPI, focusSlide, slideIds]);
+
+  const navigateSlides = useCallback(
+    (direction: "previous" | "next") => {
+      if (!slideIds.length) {
+        return;
+      }
+      const index = activeSlideId ? slideIds.indexOf(activeSlideId) : 0;
+      const safeIndex = index < 0 ? 0 : index;
+      const nextIndex =
+        direction === "next"
+          ? Math.min(safeIndex + 1, slideIds.length - 1)
+          : Math.max(safeIndex - 1, 0);
+      focusSlide(slideIds[nextIndex], true);
+    },
+    [activeSlideId, focusSlide, slideIds],
+  );
+
+  useEffect(() => {
+    if (!isPresentingSlides) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key === "ArrowRight" ||
+        event.key === "PageDown" ||
+        event.key === " "
+      ) {
+        event.preventDefault();
+        navigateSlides("next");
+      }
+      if (event.key === "ArrowLeft" || event.key === "PageUp") {
+        event.preventDefault();
+        navigateSlides("previous");
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        stopPresentation();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isPresentingSlides, navigateSlides, stopPresentation]);
+
   useHandleLibrary({
     excalidrawAPI,
     adapter: LibraryIndexedDBAdapter,
@@ -510,8 +700,10 @@ const ExcalidrawWrapper = () => {
           }
           // on fresh load, clear unused files from IDB (from previous
           // session)
-          LocalData.fileStorage.clearObsoleteFiles({
-            currentFileIds: fileIds,
+          LocalBoards.getAllReferencedFileIds().then((currentFileIds) => {
+            LocalData.fileStorage.clearObsoleteFiles({
+              currentFileIds,
+            });
           });
         }
       }
@@ -556,7 +748,7 @@ const ExcalidrawWrapper = () => {
       }
     };
 
-    const syncData = debounce(() => {
+    const syncData = debounce(async () => {
       if (isTestEnv()) {
         return;
       }
@@ -566,13 +758,9 @@ const ExcalidrawWrapper = () => {
       ) {
         // don't sync if local state is newer or identical to browser state
         if (isBrowserStorageStateNewer(STORAGE_KEYS.VERSION_DATA_STATE)) {
-          const localDataState = importFromLocalStorage();
+          await syncActiveBoardFromStorage(excalidrawAPI);
           const username = importUsernameFromLocalStorage();
           setLangCode(getPreferredLanguage());
-          excalidrawAPI.updateScene({
-            ...localDataState,
-            captureUpdate: CaptureUpdateAction.NEVER,
-          });
           LibraryIndexedDBAdapter.load().then((data) => {
             if (data) {
               excalidrawAPI.updateLibrary({
@@ -581,6 +769,10 @@ const ExcalidrawWrapper = () => {
             }
           });
           collabAPI?.setUsername(username || "");
+        } else if (
+          isBrowserStorageStateNewer(STORAGE_KEYS.VERSION_BOARDS_INDEX)
+        ) {
+          await refreshBoards();
         }
 
         if (isBrowserStorageStateNewer(STORAGE_KEYS.VERSION_FILES)) {
@@ -647,7 +839,14 @@ const ExcalidrawWrapper = () => {
         false,
       );
     };
-  }, [isCollabDisabled, collabAPI, excalidrawAPI, setLangCode, loadImages]);
+  }, [
+    isCollabDisabled,
+    collabAPI,
+    excalidrawAPI,
+    setLangCode,
+    loadImages,
+    refreshBoards,
+  ]);
 
   useEffect(() => {
     const unloadHandler = (event: BeforeUnloadEvent) => {
@@ -837,6 +1036,106 @@ const ExcalidrawWrapper = () => {
     [],
   );
 
+  const activeSlideIndex = useMemo(() => {
+    if (!activeSlideId) {
+      return -1;
+    }
+    return slideIds.indexOf(activeSlideId);
+  }, [activeSlideId, slideIds]);
+
+  const handleCreateBlankSlide = useCallback(() => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    const frameId = createBlankSlide(excalidrawAPI);
+    setActiveSlideId(frameId);
+  }, [excalidrawAPI]);
+
+  const handleCreateSlideFromSelection = useCallback(() => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    const frameId = createSlideFromSelection(excalidrawAPI);
+    setActiveSlideId(frameId);
+  }, [excalidrawAPI]);
+
+  const handleDuplicateSlide = useCallback(() => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    const duplicatedId = duplicateSlide(excalidrawAPI, activeSlideId);
+    if (duplicatedId) {
+      setActiveSlideId(duplicatedId);
+      focusSlide(duplicatedId);
+    }
+  }, [activeSlideId, excalidrawAPI, focusSlide]);
+
+  const handleMoveSlideEarlier = useCallback(() => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    const movedId = moveSlide(excalidrawAPI, "previous", activeSlideId);
+    if (movedId) {
+      setActiveSlideId(movedId);
+    }
+  }, [activeSlideId, excalidrawAPI]);
+
+  const handleMoveSlideLater = useCallback(() => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    const movedId = moveSlide(excalidrawAPI, "next", activeSlideId);
+    if (movedId) {
+      setActiveSlideId(movedId);
+    }
+  }, [activeSlideId, excalidrawAPI]);
+
+  const handleRenameSlide = useCallback(
+    (name: string) => {
+      if (!excalidrawAPI) {
+        return;
+      }
+      renameActiveSlide(excalidrawAPI, name, activeSlideId);
+    },
+    [activeSlideId, excalidrawAPI],
+  );
+
+  const handleExportSlidesHtml = useCallback(async () => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    try {
+      await exportSlidesToHtml(
+        excalidrawAPI.getSceneElements(),
+        excalidrawAPI.getAppState(),
+        excalidrawAPI.getFiles(),
+        excalidrawAPI.getName(),
+      );
+    } catch (error: any) {
+      excalidrawAPI.setToast({
+        message: error?.message || "Slide export failed.",
+      });
+    }
+  }, [excalidrawAPI]);
+
+  const handleExportSlidesPdf = useCallback(async () => {
+    if (!excalidrawAPI) {
+      return;
+    }
+    try {
+      await exportSlidesToPdf(
+        excalidrawAPI.getSceneElements(),
+        excalidrawAPI.getAppState(),
+        excalidrawAPI.getFiles(),
+        excalidrawAPI.getName(),
+      );
+    } catch (error: any) {
+      excalidrawAPI.setToast({
+        message: error?.message || "Slide export failed.",
+      });
+    }
+  }, [excalidrawAPI]);
+
   // const onExport = () => {
   //   return new Promise((r) => setTimeout(r, 2500));
   //   // console.log("onExport");
@@ -952,27 +1251,60 @@ const ExcalidrawWrapper = () => {
         autoFocus={true}
         theme={editorTheme}
         onThemeChange={setAppTheme}
-        renderTopRightUI={(isMobile) => {
-          if (isMobile || !collabAPI || isCollabDisabled) {
-            return null;
-          }
-
+        renderTopRightUI={(isMobile, appState) => {
           return (
             <div className="excalidraw-ui-top-right">
-              {excalidrawAPI?.getEditorInterface().formFactor === "desktop" && (
-                <ExcalidrawPlusPromoBanner
-                  isSignedIn={isExcalidrawPlusSignedUser}
-                />
+              {isPresentingSlides && (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 8,
+                    alignItems: "center",
+                    marginRight: 8,
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => navigateSlides("previous")}
+                  >
+                    Prev
+                  </button>
+                  <span style={{ fontSize: 12 }}>
+                    {Math.max(activeSlideIndex + 1, 1)} /{" "}
+                    {Math.max(slideIds.length, 1)}
+                  </span>
+                  <button type="button" onClick={() => navigateSlides("next")}>
+                    Next
+                  </button>
+                  <button type="button" onClick={stopPresentation}>
+                    Exit
+                  </button>
+                </div>
               )}
+              {!isMobile &&
+                collabAPI &&
+                !isCollabDisabled &&
+                excalidrawAPI?.getEditorInterface().formFactor ===
+                  "desktop" && (
+                  <ExcalidrawPlusPromoBanner
+                    isSignedIn={isExcalidrawPlusSignedUser}
+                  />
+                )}
 
-              {collabError.message && <CollabError collabError={collabError} />}
-              <LiveCollaborationTrigger
-                isCollaborating={isCollaborating}
-                onSelect={() =>
-                  setShareDialogState({ isOpen: true, type: "share" })
-                }
-                editorInterface={editorInterface}
-              />
+              {!isMobile && collabAPI && !isCollabDisabled && (
+                <>
+                  {collabError.message && (
+                    <CollabError collabError={collabError} />
+                  )}
+                  <LiveCollaborationTrigger
+                    isCollaborating={isCollaborating}
+                    onSelect={() =>
+                      setShareDialogState({ isOpen: true, type: "share" })
+                    }
+                    editorInterface={editorInterface}
+                  />
+                </>
+              )}
             </div>
           );
         }}
@@ -1060,7 +1392,26 @@ const ExcalidrawWrapper = () => {
           }}
         />
 
-        <AppSidebar />
+        <AppSidebar
+          excalidrawAPI={excalidrawAPI}
+          onCreateBoard={createBoard}
+          onSwitchBoard={switchBoard}
+          onRenameBoard={renameBoard}
+          slideCount={slideIds.length}
+          activeSlideIndex={activeSlideIndex}
+          isPresenting={isPresentingSlides}
+          onCreateBlankSlide={handleCreateBlankSlide}
+          onCreateSlideFromSelection={handleCreateSlideFromSelection}
+          onDuplicateSlide={handleDuplicateSlide}
+          onMoveSlideEarlier={handleMoveSlideEarlier}
+          onMoveSlideLater={handleMoveSlideLater}
+          onRenameSlide={handleRenameSlide}
+          onStartPresentation={startPresentation}
+          onStopPresentation={stopPresentation}
+          onExportSlidesHtml={handleExportSlidesHtml}
+          onExportSlidesPdf={handleExportSlidesPdf}
+        />
+        <IconLibraryToolbar excalidrawAPI={excalidrawAPI} />
 
         {errorMessage && (
           <ErrorDialog onClose={() => setErrorMessage("")}>
@@ -1087,6 +1438,55 @@ const ExcalidrawWrapper = () => {
                   isOpen: true,
                   type: "collaborationOnly",
                 });
+              },
+            },
+            {
+              label: "Create blank slide",
+              category: DEFAULT_CATEGORIES.app,
+              predicate: true,
+              keywords: ["slides", "presentation", "frame"],
+              perform: () => handleCreateBlankSlide(),
+            },
+            {
+              label: "Create slide from selection",
+              category: DEFAULT_CATEGORIES.app,
+              predicate: true,
+              keywords: ["slides", "presentation", "selection", "frame"],
+              perform: () => handleCreateSlideFromSelection(),
+            },
+            {
+              label: "Duplicate active slide",
+              category: DEFAULT_CATEGORIES.app,
+              predicate: () => slideIds.length > 0,
+              keywords: ["slides", "presentation", "duplicate", "frame"],
+              perform: () => handleDuplicateSlide(),
+            },
+            {
+              label: isPresentingSlides
+                ? "Stop presentation mode"
+                : "Start presentation mode",
+              category: DEFAULT_CATEGORIES.app,
+              predicate: () => slideIds.length > 0 || isPresentingSlides,
+              keywords: ["slides", "presentation", "present", "view mode"],
+              perform: () =>
+                isPresentingSlides ? stopPresentation() : startPresentation(),
+            },
+            {
+              label: "Export slides as HTML",
+              category: DEFAULT_CATEGORIES.export,
+              predicate: () => slideIds.length > 0,
+              keywords: ["slides", "presentation", "export", "html", "embed"],
+              perform: () => {
+                void handleExportSlidesHtml();
+              },
+            },
+            {
+              label: "Export slides as PDF",
+              category: DEFAULT_CATEGORIES.export,
+              predicate: () => slideIds.length > 0,
+              keywords: ["slides", "presentation", "export", "pdf"],
+              perform: () => {
+                void handleExportSlidesPdf();
               },
             },
             {

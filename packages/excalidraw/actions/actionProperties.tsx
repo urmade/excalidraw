@@ -24,6 +24,10 @@ import {
   reduceToCommonValue,
   invariant,
   FONT_SIZES,
+  MIME_TYPES,
+  applyDarkModeFilter,
+  randomId,
+  THEME,
   type StrokeWidthKey,
 } from "@excalidraw/common";
 
@@ -49,9 +53,13 @@ import {
   isArrowElement,
   isBoundToContainer,
   isElbowArrow,
+  isImageElement,
+  isInitializedImageElement,
   isLinearElement,
   isLineElement,
+  isStrokeColorizableSvgDataURL,
   isTextElement,
+  setStrokeColorOnColorizableSvg,
   isUsingAdaptiveRadius,
 } from "@excalidraw/element";
 
@@ -155,10 +163,16 @@ import {
 } from "../hooks/useTextEditorFocus";
 
 import { getShortcutKey } from "../shortcut";
+import { dataURLToString, getDataURL_sync } from "../data/blob";
 
 import { register } from "./register";
 
-import type { AppClassProperties, AppState, Primitive } from "../types";
+import type {
+  AppClassProperties,
+  AppState,
+  BinaryFileData,
+  Primitive,
+} from "../types";
 
 const FONT_SIZE_RELATIVE_INCREASE_STEP = 0.1;
 
@@ -330,13 +344,45 @@ export const actionChangeStrokeColor = register<
   name: "changeStrokeColor",
   label: "labels.stroke",
   trackEvent: false,
-  perform: (elements, appState, value) => {
-    return {
+  perform: (elements, appState, value, app) => {
+    const nextFiles: BinaryFileData[] = [];
+    const result = {
       ...(value?.currentItemStrokeColor && {
         elements: changeProperty(
           elements,
           appState,
           (el) => {
+            if (
+              isImageElement(el) &&
+              isInitializedImageElement(el) &&
+              el.fileId &&
+              app.files[el.fileId]?.mimeType === MIME_TYPES.svg &&
+              isStrokeColorizableSvgDataURL(app.files[el.fileId].dataURL)
+            ) {
+              const svgString = dataURLToString(app.files[el.fileId].dataURL);
+              const coloredSvg = setStrokeColorOnColorizableSvg(
+                svgString,
+                applyDarkModeFilter(
+                  value.currentItemStrokeColor,
+                  appState.theme === THEME.DARK,
+                ),
+              );
+              const nextFileId = randomId() as typeof el.fileId;
+
+              nextFiles.push({
+                id: nextFileId,
+                mimeType: MIME_TYPES.svg,
+                dataURL: getDataURL_sync(coloredSvg, MIME_TYPES.svg),
+                created: Date.now(),
+                lastRetrieved: Date.now(),
+              });
+
+              return newElementWith(el, {
+                strokeColor: value.currentItemStrokeColor,
+                fileId: nextFileId,
+              });
+            }
+
             return hasStrokeColor(el.type)
               ? newElementWith(el, {
                   strokeColor: value.currentItemStrokeColor,
@@ -354,6 +400,12 @@ export const actionChangeStrokeColor = register<
         ? CaptureUpdateAction.IMMEDIATELY
         : CaptureUpdateAction.EVENTUALLY,
     };
+
+    if (nextFiles.length) {
+      app.addFiles(nextFiles);
+    }
+
+    return result;
   },
   PanelComponent: ({ elements, appState, updateData, app, data }) => {
     const { stylesPanelMode } = getStylesPanelInfo(app);

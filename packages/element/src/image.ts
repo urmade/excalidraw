@@ -18,6 +18,25 @@ import type {
   InitializedExcalidrawImageElement,
 } from "./types";
 
+export const STROKE_COLORIZABLE_SVG_ATTRIBUTE =
+  "data-excalidraw-stroke-colorizable";
+
+const parseSvg = (svgString: string) => {
+  const doc = new DOMParser().parseFromString(svgString, MIME_TYPES.svg);
+  const svg = doc.querySelector("svg");
+  const errorNode = doc.querySelector("parsererror");
+
+  if (errorNode || !isHTMLSVGElement(svg)) {
+    throw new Error("Invalid SVG");
+  }
+
+  return svg;
+};
+
+export const dataURLToString = (dataURL: DataURL) => {
+  return atob(dataURL.slice(dataURL.indexOf(",") + 1));
+};
+
 export const loadHTMLImageElement = (dataURL: DataURL) => {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
@@ -61,6 +80,9 @@ export const updateImageCache = async ({
               const data = {
                 image: imagePromise,
                 mimeType: fileData.mimeType,
+                isStrokeColorizableSvg:
+                  fileData.mimeType === MIME_TYPES.svg &&
+                  isStrokeColorizableSvgDataURL(fileData.dataURL),
               } as const;
               // store the promise immediately to indicate there's an in-progress
               // initialization
@@ -102,52 +124,72 @@ export const isHTMLSVGElement = (node: Node | null): node is SVGElement => {
 };
 
 export const normalizeSVG = (SVGString: string) => {
-  const doc = new DOMParser().parseFromString(SVGString, MIME_TYPES.svg);
-  const svg = doc.querySelector("svg");
-  const errorNode = doc.querySelector("parsererror");
-  if (errorNode || !isHTMLSVGElement(svg)) {
-    throw new Error("Invalid SVG");
-  } else {
-    if (!svg.hasAttribute("xmlns")) {
-      svg.setAttribute("xmlns", SVG_NS);
-    }
+  const svg = parseSvg(SVGString);
 
-    let width = svg.getAttribute("width");
-    let height = svg.getAttribute("height");
-
-    // Do not use % or auto values for width/height
-    // to avoid scaling issues when rendering at different sizes/zoom levels
-    if (width?.includes("%") || width === "auto") {
-      width = null;
-    }
-    if (height?.includes("%") || height === "auto") {
-      height = null;
-    }
-
-    const viewBox = svg.getAttribute("viewBox");
-
-    if (!width || !height) {
-      width = width || "50";
-      height = height || "50";
-
-      if (viewBox) {
-        const match = viewBox.match(
-          /\d+ +\d+ +(\d+(?:\.\d+)?) +(\d+(?:\.\d+)?)/,
-        );
-        if (match) {
-          [, width, height] = match;
-        }
-      }
-
-      svg.setAttribute("width", width);
-      svg.setAttribute("height", height);
-    }
-
-    // Make sure viewBox is set
-    if (!viewBox) {
-      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
-    }
-
-    return svg.outerHTML;
+  if (!svg.hasAttribute("xmlns")) {
+    svg.setAttribute("xmlns", SVG_NS);
   }
+
+  let width = svg.getAttribute("width");
+  let height = svg.getAttribute("height");
+
+  // Do not use % or auto values for width/height
+  // to avoid scaling issues when rendering at different sizes/zoom levels
+  if (width?.includes("%") || width === "auto") {
+    width = null;
+  }
+  if (height?.includes("%") || height === "auto") {
+    height = null;
+  }
+
+  const viewBox = svg.getAttribute("viewBox");
+
+  if (!width || !height) {
+    width = width || "50";
+    height = height || "50";
+
+    if (viewBox) {
+      const match = viewBox.match(/\d+ +\d+ +(\d+(?:\.\d+)?) +(\d+(?:\.\d+)?)/);
+      if (match) {
+        [, width, height] = match;
+      }
+    }
+
+    svg.setAttribute("width", width);
+    svg.setAttribute("height", height);
+  }
+
+  // Make sure viewBox is set
+  if (!viewBox) {
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  }
+
+  return svg.outerHTML;
+};
+
+export const isStrokeColorizableSvg = (svgString: string) => {
+  return parseSvg(svgString).hasAttribute(STROKE_COLORIZABLE_SVG_ATTRIBUTE);
+};
+
+export const isStrokeColorizableSvgDataURL = (dataURL: DataURL) => {
+  try {
+    return isStrokeColorizableSvg(dataURLToString(dataURL));
+  } catch {
+    return false;
+  }
+};
+
+export const setStrokeColorOnColorizableSvg = (
+  svgString: string,
+  strokeColor: string,
+) => {
+  const svg = parseSvg(svgString);
+
+  if (!svg.hasAttribute(STROKE_COLORIZABLE_SVG_ATTRIBUTE)) {
+    return normalizeSVG(svgString);
+  }
+
+  svg.setAttribute("color", strokeColor);
+
+  return normalizeSVG(svg.outerHTML);
 };

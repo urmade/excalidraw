@@ -15,10 +15,12 @@ import {
   hasBoundTextElement,
   isElbowArrow,
   isImageElement,
+  isInitializedImageElement,
   isLinearElement,
   isTextElement,
   isArrowElement,
   hasStrokeColor,
+  isStrokeColorizableSvgDataURL,
   toolIsArrow,
 } from "@excalidraw/element";
 
@@ -104,6 +106,7 @@ const PROPERTIES_CLASSES = clsx([
 export const canChangeStrokeColor = (
   appState: UIAppState,
   targetElements: ExcalidrawElement[],
+  app: AppClassProperties,
 ) => {
   let commonSelectedType: ExcalidrawElementType | null =
     targetElements[0]?.type || null;
@@ -120,7 +123,13 @@ export const canChangeStrokeColor = (
       commonSelectedType !== "image" &&
       commonSelectedType !== "frame" &&
       commonSelectedType !== "magicframe") ||
-    targetElements.some((element) => hasStrokeColor(element.type))
+    targetElements.some(
+      (element) =>
+        hasStrokeColor(element.type) ||
+        (isImageElement(element) &&
+          isInitializedImageElement(element) &&
+          isStrokeColorizableSvgDataURL(app.files[element.fileId]?.dataURL)),
+    )
   );
 };
 
@@ -189,7 +198,7 @@ export const SelectedShapeActions = ({
   return (
     <div className="selected-shape-actions">
       <div>
-        {canChangeStrokeColor(appState, targetElements) &&
+        {canChangeStrokeColor(appState, targetElements, app) &&
           renderAction("changeStrokeColor")}
       </div>
       {canChangeBackgroundColor(appState, targetElements) && (
@@ -824,7 +833,7 @@ export const CompactShapeActions = ({
   return (
     <div className="compact-shape-actions">
       {/* Stroke Color */}
-      {canChangeStrokeColor(appState, targetElements) && (
+      {canChangeStrokeColor(appState, targetElements, app) && (
         <div className={clsx("compact-action-item")}>
           {renderAction("changeStrokeColor")}
         </div>
@@ -971,7 +980,7 @@ export const MobileShapeActions = ({
           flex: 1,
         }}
       >
-        {canChangeStrokeColor(appState, targetElements) && (
+        {canChangeStrokeColor(appState, targetElements, app) && (
           <div className={clsx("compact-action-item")}>
             {renderAction("changeStrokeColor")}
           </div>

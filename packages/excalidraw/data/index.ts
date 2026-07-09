@@ -39,6 +39,13 @@ import type { AppState, BinaryFiles } from "../types";
 
 export { loadFromBlob } from "./blob";
 export { loadFromJSON, saveAsJSON } from "./json";
+export {
+  applySlideOrderToFrames,
+  getOrderedSlideFrames,
+  getSlideElements,
+  getSlideFrameName,
+  getSlideFrameTitle,
+} from "./slides";
 
 export type ExportedElements = readonly NonDeletedExcalidrawElement[] & {
   _brand: "exportedElements";

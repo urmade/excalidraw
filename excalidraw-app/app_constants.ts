@@ -44,9 +44,13 @@ export const STORAGE_KEYS = {
   LOCAL_STORAGE_DEBUG: "excalidraw-debug",
   VERSION_DATA_STATE: "version-dataState",
   VERSION_FILES: "version-files",
+  VERSION_BOARDS_INDEX: "version-boardsIndex",
+
+  ACTIVE_BOARD_ID: "excalidraw-active-board",
 
   IDB_LIBRARY: "excalidraw-library",
   IDB_TTD_CHATS: "excalidraw-ttd-chats",
+  IDB_BOARDS: "excalidraw-boards",
 
   // do not use apart from migrations
   __LEGACY_LOCAL_STORAGE_LIBRARY: "excalidraw-library",

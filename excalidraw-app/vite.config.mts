@@ -1,3 +1,4 @@
+import * as fs from "node:fs/promises";
 import path from "path";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
@@ -8,6 +9,36 @@ import checker from "vite-plugin-checker";
 import { createHtmlPlugin } from "vite-plugin-html";
 import Sitemap from "vite-plugin-sitemap";
 import { woff2BrowserPlugin } from "../scripts/woff2/woff2-vite-plugins";
+
+const DEV_BOARDS_ENDPOINT = "/api/dev/local-boards";
+const DEV_BOARDS_FILE = path.resolve(
+  __dirname,
+  "./.data/local-boards.json",
+);
+
+const readRequestBody = async (request: NodeJS.ReadableStream) => {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of request) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+
+  return Buffer.concat(chunks).toString("utf8");
+};
+
+const sendJson = (
+  response: {
+    statusCode: number;
+    setHeader: (name: string, value: string) => void;
+    end: (body: string) => void;
+  },
+  statusCode: number,
+  body: unknown,
+) => {
+  response.statusCode = statusCode;
+  response.setHeader("Content-Type", "application/json");
+  response.end(JSON.stringify(body));
+};
 export default defineConfig(({ mode }) => {
   // To load .env variables
   const envVars = loadEnv(mode, `../`);
@@ -132,6 +163,57 @@ export default defineConfig(({ mode }) => {
       assetsInlineLimit: 0,
     },
     plugins: [
+      {
+        name: "local-boards-persistence",
+        configureServer(server) {
+          server.middlewares.use(
+            DEV_BOARDS_ENDPOINT,
+            async (request, response, next) => {
+              if (!request.url?.startsWith(DEV_BOARDS_ENDPOINT)) {
+                next();
+                return;
+              }
+
+              try {
+                if (request.method === "GET") {
+                  try {
+                    const data = await fs.readFile(DEV_BOARDS_FILE, "utf8");
+                    sendJson(response, 200, JSON.parse(data));
+                  } catch (error: any) {
+                    if (error?.code === "ENOENT") {
+                      sendJson(response, 404, { error: "Not found" });
+                    } else {
+                      throw error;
+                    }
+                  }
+                  return;
+                }
+
+                if (request.method === "PUT") {
+                  const body = await readRequestBody(request);
+                  await fs.mkdir(path.dirname(DEV_BOARDS_FILE), {
+                    recursive: true,
+                  });
+                  await fs.writeFile(
+                    DEV_BOARDS_FILE,
+                    `${JSON.stringify(JSON.parse(body), null, 2)}\n`,
+                    "utf8",
+                  );
+                  sendJson(response, 200, { ok: true });
+                  return;
+                }
+
+                response.statusCode = 405;
+                response.setHeader("Allow", "GET, PUT");
+                response.end();
+              } catch (error) {
+                console.error("Local boards persistence middleware failed", error);
+                sendJson(response, 500, { error: "Internal server error" });
+              }
+            },
+          );
+        },
+      },
       Sitemap({
         hostname: "https://excalidraw.com",
         outDir: "build",

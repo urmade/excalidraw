@@ -1,0 +1,89 @@
+.excalidraw {
+  .boards-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .boards-menu__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .boards-menu__title {
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .boards-menu__create-button {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    white-space: nowrap;
+  }
+
+  .boards-menu__empty {
+    color: var(--color-gray-60);
+    font-size: 0.875rem;
+    padding: 0.5rem 0;
+  }
+
+  .boards-menu__list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    overflow-y: auto;
+  }
+
+  .boards-menu__item {
+    border-radius: 0.375rem;
+    overflow: hidden;
+  }
+
+  .boards-menu__item--active {
+    background: var(--color-surface-high);
+  }
+
+  .boards-menu__item-button {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.125rem;
+    padding: 0.625rem 0.75rem;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--color-surface-mid);
+    }
+  }
+
+  .boards-menu__item-title {
+    font-size: 0.875rem;
+    font-weight: 500;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .boards-menu__item-meta {
+    font-size: 0.75rem;
+    color: var(--color-gray-60);
+  }
+
+  .boards-menu__rename-input {
+    padding: 0.375rem 0.5rem;
+  }
+}
