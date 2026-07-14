@@ -1286,9 +1286,7 @@ const ExcalidrawWrapper = () => {
                 !isCollabDisabled &&
                 excalidrawAPI?.getEditorInterface().formFactor ===
                   "desktop" && (
-                  <ExcalidrawPlusPromoBanner
-                    isSignedIn={isExcalidrawPlusSignedUser}
-                  />
+                  <ExcalidrawPlusPromoBanner />
                 )}
 
               {!isMobile && collabAPI && !isCollabDisabled && (
